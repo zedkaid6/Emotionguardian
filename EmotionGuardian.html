@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EmotionGuardian - Admin Dashboard</title>
+  <style>
+    body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #0e0f23; color: #fff; }
+    .sidebar { width: 220px; background: #1a1b3a; height: 100vh; position: fixed; display: flex; flex-direction: column; padding: 1rem; }
+    .sidebar h2 { color: #fff; margin-bottom: 2rem; font-weight: bold; }
+    .nav-link { padding: 0.8rem; color: #ccc; text-decoration: none; margin-bottom: 0.5rem; border-radius: 8px; transition: 0.2s; }
+    .nav-link:hover, .nav-link.active { background-color: #292b5a; color: #fff; }
+    .main { margin-left: 220px; padding: 2rem; }
+    .card { background-color: #1e1f3e; border-radius: 10px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+    .card h3 { margin: 0 0 1rem; }
+    .btn { background-color: #6c63ff; color: #fff; padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; }
+    .btn:hover { background-color: #5548e1; }
+    .violations-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    .violations-table th, .violations-table td { padding: 0.5rem 1rem; text-align: left; border-bottom: 1px solid #333; }
+    .violations-table th { background-color: #292b5a; }
+    .chat-box { background: #1e1f3e; height: 400px; overflow-y: auto; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; }
+    .message { margin-bottom: 0.5rem; }
+    .message.admin { color: #6c63ff; }
+    .message.user { color: #ccc; }
+    .input-group { display: flex; gap: 0.5rem; }
+    .input-group input { flex: 1; padding: 0.5rem; border-radius: 6px; border: 1px solid #555; background-color: #111; color: #fff; }
+    #loginPage { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background: #0e0f23; display: flex; align-items: center; justify-content: center; }
+    #loginBox { background: #1a1b3a; padding: 2rem; border-radius: 10px; width: 300px; text-align: center; }
+    #loginBox input { width: 100%; margin-bottom: 1rem; padding: 0.5rem; border-radius: 6px; border: 1px solid #444; background: #111; color: #fff; }
+  </style>
+</head>
+<body>
+  <div id="loginPage">
+    <div id="loginBox">
+      <h2>Admin Login</h2>
+      <input type="text" id="username" placeholder="Username">
+      <input type="password" id="password" placeholder="Password">
+      <button class="btn" onclick="login()">Login</button>
+    </div>
+  </div>
+
+  <div class="sidebar" style="display:none">
+    <h2>EmotionGuardian</h2>
+    <a href="#dashboard" class="nav-link active">📊 Dashboard</a>
+    <a href="#violations" class="nav-link">🚨 Violations</a>
+    <a href="#banned" class="nav-link">⛔ Banned Users</a>
+    <a href="#ai" class="nav-link">🤖 AI Settings</a>
+    <a href="#chat" class="nav-link">💬 Chat</a>
+    <a href="#logout" class="nav-link" onclick="logout()">📤 Logout</a>
+  </div>
+
+  <div class="main" id="main-content" style="display:none">
+    <div id="dashboard" class="section">
+      <div class="card">
+        <h3>📊 System Stats</h3>
+        <p>Total players: <b>5320</b></p>
+        <p>Violations today: <b>23</b></p>
+        <p>Permanently banned: <b>11</b></p>
+      </div>
+    </div>
+
+    <div id="violations" class="section" style="display:none">
+      <div class="card">
+        <h3>🚨 Violations List</h3>
+        <input type="text" id="searchInput" placeholder="Search player..." style="margin-bottom:10px;width:100%;padding:5px;border-radius:6px;background:#111;color:#fff;border:1px solid #444">
+        <table class="violations-table">
+          <thead>
+            <tr><th>Avatar</th><th>Player</th><th>Game</th><th>Violation</th><th>Date</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="violationBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="banned" class="section" style="display:none">
+      <div class="card">
+        <h3>⛔ Banned Users</h3>
+        <ul id="banList"></ul>
+      </div>
+    </div>
+
+    <div id="ai" class="section" style="display:none">
+      <div class="card">
+        <h3>🤖 AI Penalty Suggestions</h3>
+        <p>AI is active and automatically suggests penalties based on severity.</p>
+        <button class="btn">View Settings</button>
+      </div>
+    </div>
+
+    <div id="chat" class="section" style="display:none">
+      <div class="card">
+        <h3>💬 Chat with Offenders</h3>
+        <select id="chatUserSelect" style="margin-bottom:10px;width:100%;padding:5px;border-radius:6px;background:#111;color:#fff;border:1px solid #444"></select>
+        <div class="chat-box" id="chatBox"></div>
+        <div class="input-group">
+          <input type="text" id="chatInput" placeholder="Enter message...">
+          <button class="btn" onclick="sendMessage()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = new WebSocket('wss://echo.websocket.org');
+    const messages = {};
+    const violationCounts = {};
+    const toxicWords = [
+      'fuck', 'shit', 'bitch', 'asshole', 'motherfucker', 'cunt', 'suck my dick',
+      'your mom is a whore', 'fucking retard', 'go kill yourself', 'dickhead',
+      'bastard', 'pussy', 'goddamn', 'dumbass', 'son of a bitch'
+    ];
+
+    function login() {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+      if (username === "admin" && password === "123456") {
+        document.getElementById("loginPage").style.display = "none";
+        document.querySelector(".sidebar").style.display = "flex";
+        document.getElementById("main-content").style.display = "block";
+        generateViolationTable();
+      } else {
+        alert("Invalid username or password!");
+      }
+    }
+
+    function logout() {
+      location.reload();
+    }
+
+    const navLinks = document.querySelectorAll('.nav-link');
+    const sections = document.querySelectorAll('.section');
+    navLinks.forEach(link => {
+      link.addEventListener('click', function (e) {
+        e.preventDefault();
+        navLinks.forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+        const targetId = link.getAttribute('href').substring(1);
+        sections.forEach(section => {
+          section.style.display = section.id === targetId ? 'block' : 'none';
+        });
+      });
+    });
+
+    function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const user = document.getElementById('chatUserSelect').value;
+      const message = input.value.trim();
+      if (!user || !message) return;
+      if (!messages[user]) messages[user] = [];
+      messages[user].push({ sender: 'admin', text: message });
+      socket.send(JSON.stringify({ user, message }));
+      input.value = '';
+      loadChat(user);
+    }
+
+    document.getElementById('chatUserSelect').addEventListener('change', e => {
+      loadChat(e.target.value);
+    });
+
+    function loadChat(user) {
+      const box = document.getElementById('chatBox');
+      box.innerHTML = '';
+      (messages[user] || []).forEach(m => {
+        const div = document.createElement('div');
+        div.className = 'message ' + m.sender;
+        div.textContent = `${m.sender === 'admin' ? 'Admin' : user}: ${m.text}`;
+        box.appendChild(div);
+      });
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function generateViolationTable() {
+      const tbody = document.getElementById("violationBody");
+      const chatSelect = document.getElementById("chatUserSelect");
+      const banList = document.getElementById("banList");
+      tbody.innerHTML = '';
+      chatSelect.innerHTML = '';
+      banList.innerHTML = '';
+
+      for (let i = 1; i <= 100; i++) {
+        const user = `User${i}`;
+        const game = i % 3 === 0 ? 'CS:GO' : i % 3 === 1 ? 'Valorant' : 'LoL';
+
+        const reasonCount = Math.floor(Math.random() * 3);
+        let reason = '';
+        for (let j = 0; j < reasonCount; j++) {
+          reason += toxicWords[Math.floor(Math.random() * toxicWords.length)] + (j < reasonCount - 1 ? ', ' : '');
+        }
+
+        const date = `2025-06-${(i % 30 + 1).toString().padStart(2, '0')}`;
+        let status = '⏳ Awaiting admin review';
+        violationCounts[user] = reasonCount;
+
+        if (reasonCount >= 2) {
+          status = '⛔ AI Auto-Banned';
+          const li = document.createElement('li');
+          li.textContent = `${user} (${game}) - Permanently banned`;
+          banList.appendChild(li);
+        } else if (reasonCount === 1) {
+          status = '⚠️ AI Warning';
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><img src="https://i.pravatar.cc/40?u=${user}" width="40" style="border-radius: 50%;"></td>
+          <td>${user}</td>
+          <td>${game}</td>
+          <td>${reason || 'No violation'}</td>
+          <td>${date}</td>
+          <td>${status}</td>
+          <td>
+            <button class="btn" onclick="alert('Warned ${user}')">Warn</button>
+            <button class="btn" onclick="banUser('${user}', '${game}')">Ban</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+
+        const opt = document.createElement('option');
+        opt.value = user;
+        opt.textContent = user;
+        chatSelect.appendChild(opt);
+      }
+    }
+
+    document.getElementById('searchInput').addEventListener('input', function () {
+      const filter = this.value.toLowerCase();
+      const rows = document.querySelectorAll('#violationBody tr');
+      rows.forEach(row => {
+        const name = row.children[1].textContent.toLowerCase();
+        row.style.display = name.includes(filter) ? '' : 'none';
+      });
+    });
+
+    function banUser(user, game) {
+      const banList = document.getElementById('banList');
+      const li = document.createElement('li');
+      li.textContent = `${user} (${game}) - Permanently banned`;
+      banList.appendChild(li);
+    }
+  </script>
+</body>
+</html>
